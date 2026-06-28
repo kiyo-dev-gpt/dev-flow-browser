@@ -42,6 +42,8 @@ fn image_script(images_enabled: bool) -> String {
         r#"
           (() => {
             document.documentElement.dataset.devFlowImages = "on";
+            window.__devFlowImageObserver?.disconnect();
+            window.__devFlowImageObserver = undefined;
             document.getElementById("dev-flow-image-mode")?.remove();
           })();
         "#
@@ -50,17 +52,15 @@ fn image_script(images_enabled: bool) -> String {
         r#"
           (() => {
             document.documentElement.dataset.devFlowImages = "off";
-            const apply = () => {
-              let style = document.getElementById("dev-flow-image-mode");
-              if (!style) {
-                style = document.createElement("style");
-                style.id = "dev-flow-image-mode";
-                document.documentElement.appendChild(style);
-              }
-              style.textContent = "img,picture,svg,video,source{visibility:hidden!important}";
-            };
-            apply();
-            new MutationObserver(apply).observe(document.documentElement, { childList: true, subtree: true });
+            window.__devFlowImageObserver?.disconnect();
+            window.__devFlowImageObserver = undefined;
+            let style = document.getElementById("dev-flow-image-mode");
+            if (!style) {
+              style = document.createElement("style");
+              style.id = "dev-flow-image-mode";
+              document.head?.appendChild(style) ?? document.documentElement.appendChild(style);
+            }
+            style.textContent = "html[data-dev-flow-images='off'] img,html[data-dev-flow-images='off'] picture,html[data-dev-flow-images='off'] svg,html[data-dev-flow-images='off'] video,html[data-dev-flow-images='off'] source{visibility:hidden!important}";
           })();
         "#
         .to_string()
@@ -158,7 +158,7 @@ async fn browser_create(
     tab_id: u32,
     url: String,
     bounds: BrowserBounds,
-    images_enabled: bool,
+    _images_enabled: bool,
 ) -> Result<(), String> {
     let window = app
         .get_window("main")
@@ -177,7 +177,7 @@ async fn browser_create(
 
     let app_for_page = app.clone();
     let app_for_title = app.clone();
-    let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(parse_external_url(&url)?))
+    let builder = WebviewBuilder::new(&label, WebviewUrl::External(parse_external_url(&url)?))
         .devtools(true)
         .data_directory(state.data_dir.clone())
         .on_page_load(move |_webview, payload| {
@@ -194,10 +194,6 @@ async fn browser_create(
         .on_document_title_changed(move |_webview, title| {
             let _ = app_for_title.emit("browser-title-changed", BrowserTitleEvent { tab_id, title });
         });
-
-    if !images_enabled {
-        builder = builder.initialization_script_for_all_frames(image_script(false));
-    }
 
     let webview = window
         .add_child(
@@ -302,7 +298,7 @@ fn browser_set_images(app: tauri::AppHandle, images_enabled: bool) -> Result<(),
     let script = image_script(images_enabled);
     for (_label, webview) in app.webviews() {
         if webview.label().starts_with("browser-tab-") {
-            let _ = webview.eval(script.clone());
+            webview.eval(script.clone()).map_err(|error| error.to_string())?;
         }
     }
     Ok(())

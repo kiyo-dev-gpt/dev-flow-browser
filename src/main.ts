@@ -158,6 +158,9 @@ void listen<BrowserPageEvent>("browser-page-loaded", (event) => {
   tab.isHome = false;
   tab.title = titleForUrl(event.payload.url);
   render();
+  if (!imagesEnabled) {
+    void invoke("browser_set_images", { imagesEnabled: false }).catch((error) => flashNotice(String(error)));
+  }
 });
 
 void listen<BrowserTitleEvent>("browser-title-changed", (event) => {
